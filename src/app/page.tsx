@@ -1,11 +1,17 @@
 'use client'
-import { Canvas, Euler, extend, SphereGeometryProps, useThree } from "@react-three/fiber";
+import { Canvas, Euler, extend, SphereGeometryProps, ThreeEvent, useThree } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three"
 import React from "react"; import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { Line, useAspect } from "@react-three/drei";
+import { create } from "zustand";
 extend({ Line2 })
 
+const useCursorStore = create((set) => ({
+  cursor: 'auto',
+  interactable: () => set((state: any) => ({ cursor: 'grab' })),
+  default: () => set((state: any) => ({ cursor: 'auto' })),
+}))
 
 interface KeyBinding {
   cmd: string | string[],
@@ -50,11 +56,24 @@ function lerp(v0: number, v1: number, t: number) {
   return (1 - t) * v0 + t * v1;
 }
 
+
+/** Checks whether the first intersected object is the object that registered the event */
+function intersectedFirst(ev: ThreeEvent<PointerEvent>) {
+  return ev.eventObject.uuid == ev.intersections[0].object.uuid;
+}
+
+type Point2 = {
+  x: number,
+  y: number
+}
+
 type ALineProps = {
   rotated: (num: number) => any;
   rotation: number;
   radius: number;
+  selected?: Point2;
 }
+
 
 type ALineType = "Meridian" | "Equator";
 
@@ -90,9 +109,9 @@ function ALine(type: ALineType) {
 
         let deltaRot;
         if (type === "Meridian") {
-          deltaRot = (deltaY / size) * Math.PI;
+          deltaRot = (deltaY / size) * Math.PI / 2;
         } else {
-          deltaRot = (deltaX / size) * Math.PI;
+          deltaRot = (deltaX / size) * Math.PI / 2;
         }
 
         setCumulativeRotation((prevRot) => prevRot - deltaRot);
@@ -104,6 +123,14 @@ function ALine(type: ALineType) {
     useEffect(() => {
       setCumulativeRotation(props.rotation);
     }, []);
+
+    useEffect(() => {
+      if (props.selected) {
+        const { x, y } = props.selected!;
+        setSelected(true);
+        setMousePos(new THREE.Vector3(x, y, 0))
+      }
+    }, [props.selected]);
 
     useEffect(() => {
       document.addEventListener('mouseup', mouseup);
@@ -121,11 +148,15 @@ function ALine(type: ALineType) {
         color={!hover ? "black" : "blue"}
         linewidth={10}
         rotation={type === "Equator" ? [props.rotation, 0, 0] : [0, props.rotation, 0]}
-        onPointerOver={() => setHover(true)}
-        onPointerOut={() => setHover(false)}
+        onPointerOver={(ev) => {
+          setHover(intersectedFirst(ev))
+        }}
+        onPointerOut={(ev) => setHover(false)}
         onPointerDown={(ev) => {
-          setSelected(true);
-          setMousePos(new THREE.Vector3(ev.x, ev.y, 0));
+          if (intersectedFirst(ev)) {
+            setSelected(true);
+            setMousePos(new THREE.Vector3(ev.x, ev.y, 0));
+          }
         }}
       />
     );
@@ -157,15 +188,24 @@ function Vis() {
   const [rotationMer, setRotationMer] = useState(Math.PI / 2);
   const [rotationEq, setRotationEq] = useState(Math.PI / 2);
   const [radius, setRadius] = useState(3);
+  const [selected, setSelected] = useState<Point2 | undefined>(undefined);
   const { gl, camera } = useThree();
+  const sphereRef = useRef(null);
+  const cursorInteractable = useCursorStore((state: any) => state.interactable);
+  const cursorDefault = useCursorStore((state: any) => state.default);
+
 
   function resize() {
     const diameter = Math.min(visibleHeightAtZDepth(1.1, camera as THREE.PerspectiveCamera), visibleWidthAtZDepth(1.1, camera as THREE.PerspectiveCamera));
+
     const radius = diameter / 2;
     setRadius(radius);
   }
 
   useEffect(() => {
+    //console.log("camera pos", camera.position)
+    //console.log("sphere pos", sphereRef.current?.position)
+
     resize();
     window.addEventListener('resize', resize);
 
@@ -194,23 +234,40 @@ function Vis() {
     <spotLight position={[10, 10, 15]} angle={0.15} penumbra={1} decay={0} intensity={Math.PI} />
 
     {
-      <mesh rotation={[rotationEq, rotationMer, 0]}>
+      <mesh
+        ref={sphereRef}
+        onPointerOver={(ev) => {
+          cursorInteractable();
+        }}
+        onPointerOut={(ev) => {
+          cursorDefault();
+        }}
+        onPointerDown={(ev) => {
+          if (intersectedFirst(ev)) {
+            setSelected({ ...ev });
+          }
+        }}
+        onPointerUp={(_) => {
+          setSelected(undefined);
+        }}
+        rotation={[rotationEq, rotationMer, 0]}>
         <sphereGeometry args={[radius, 100, 64]} />
         <meshStandardMaterial color="lightgrey" />
       </mesh>
     }
 
-    <Equator radius={radius} rotation={rotationEq} rotated={setRotationMer} />
-
-    <Meridian radius={radius} rotation={rotationMer} rotated={setRotationEq} />
+    <Equator radius={radius} selected={selected} rotation={rotationEq} rotated={setRotationMer} />
+    <Meridian radius={radius} selected={selected} rotation={rotationMer} rotated={setRotationEq} />
   </>;
 }
 
 export default function Home() {
+  const cursor = useCursorStore((state: any) => state.cursor)
+
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start h-4/5 w-4/5">
-        <Canvas className="">
+        <Canvas className="" style={{ "cursor": cursor }}>
           <Vis />
         </Canvas>
       </main>
