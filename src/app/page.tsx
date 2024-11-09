@@ -55,14 +55,15 @@ function intersectedFirst(ev: ThreeEvent<PointerEvent>) {
 type ALineProps = {
   selected: (isSelected: boolean) => any;
   radius?: number;
-  lineWidth?: number
+  lineWidth?: number;
+  clippingPlanes?: THREE.Plane[];
 }
 
 
 type ALineType = "Meridian" | "Equator";
 
 function ALine(type: ALineType) {
-  return ({ radius = 1, lineWidth = 10, ...rest }: ALineProps) => {
+  return ({ radius = 1, lineWidth = 10, clippingPlanes = [], ...rest }: ALineProps) => {
     const curve = new THREE.EllipseCurve(
       0, 0,
       radius + 0.005, radius + 0.005,
@@ -91,6 +92,7 @@ function ALine(type: ALineType) {
 
     return (
       <Line
+        clippingPlanes={clippingPlanes}
         points={points}
         color={!hover ? "black" : "blue"}
         linewidth={lineWidth}
@@ -132,19 +134,29 @@ function Vis() {
   const sphereRef = useRef<THREE.Sphere>(null!);
   const [hovered, setHovered] = useState<boolean>(false)
   const [planes, setPlanes] = useState<THREE.Plane[]>([])
+  const [planeDistance, setPlaneDistance] = useState(0.0)
+  const [planeRadius, setPlaneRadius] = useState(0.0)
   useCursor(hovered)
 
 
   useEffect(() => {
     const distance = 0.55 * scale;
+    setPlaneDistance(distance);
     const xAxis = new THREE.Vector3(1, 0, 0);
     const nxAxis = new THREE.Vector3(-1, 0, 0);
 
     const left = new Plane(xAxis, distance);
     const right = new Plane(nxAxis, distance);
 
-    gl.clippingPlanes = [left, right];
+    //gl.clippingPlanes = [left, right];
+
     setPlanes([left, right]);
+
+    // pythagorean theorem
+    const rr = Math.sqrt(scale * scale - distance * distance);
+    console.log("plane radius", rr);
+
+    setPlaneRadius(rr * 1.001);
   }, [viewport]);
 
 
@@ -212,21 +224,18 @@ function Vis() {
 
     <group position={[0, 0, 0]} scale={scale}>
       <mesh
-        onPointerOver={(ev) => {
-          //setHovered(true);
-          const {distance, ray} = ev;
-          console.log("distance sphere", distance);
+        onPointerMove={(ev) => {
+          const { point } = ev;
 
-
+          let inside = true;
           for (const plane of planes) {
-            let p = new THREE.Vector3();
-            ray.intersectPlane(plane, p)            
-            const distanceP = ray.distanceToPoint(p)
-            console.log("distance p", distanceP);
-            if (distanceP > distance) {
-              setHovered(true);
+            const distToPlane = plane.distanceToPoint(point)
+            if (distToPlane < 0) {
+              inside = false
             }
           }
+
+          setHovered(inside);
         }}
         onPointerOut={(ev) => {
           setHovered(false);
@@ -234,14 +243,30 @@ function Vis() {
         rotation={[Math.PI / 2, Math.PI / 2, 0]}
       >
         <sphereGeometry ref={sphereRef} args={[1, 100, 64]} />
-        <meshStandardMaterial color="lightgrey">
+        <meshStandardMaterial clippingPlanes={planes} color="lightgrey">
         </meshStandardMaterial>
       </mesh>
 
-      <Equator lineWidth={pxScale / 80} selected={setSelectedEq} />
+      <Equator lineWidth={pxScale / 80} selected={setSelectedEq} clippingPlanes={planes} />
       <Meridian lineWidth={pxScale / 80} selected={setSelectedMer} />
-
     </group>
+
+    <mesh position={[planeDistance, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+      <circleGeometry args={[planeRadius, 64]} />
+    </mesh>
+    <mesh position={[-planeDistance, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+      <circleGeometry args={[planeRadius, 64]} />
+    </mesh>
+    <Line
+      points={[[planeDistance * 1.005, 0, -planeRadius * 1.005], [planeDistance * 1.005, 0, planeRadius * 1.005]]}
+      lineWidth={(pxScale / 80)}
+      color={"black"}
+    />
+    <Line
+      points={[[-planeDistance * 1.005, 0, -planeRadius * 1.005], [-planeDistance * 1.005, 0, planeRadius * 1.005]]}
+      lineWidth={(pxScale / 80)}
+      color={"black"}
+    />
 
     <CameraControls ref={cc} minDistance={4} maxDistance={10} minPolarAngle={minP} maxPolarAngle={maxP} minAzimuthAngle={minA} maxAzimuthAngle={maxA} />
   </>;
@@ -251,10 +276,10 @@ export default function Home() {
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start h-4/5 w-4/5">
-        <Canvas camera={{ fov: 60 }} className="">
+        <Canvas gl={{ localClippingEnabled: true }} camera={{ fov: 60 }} className="">
           <Vis />
         </Canvas>
       </main>
-    </div>
+    </div >
   );
 }
