@@ -5,6 +5,8 @@ import * as THREE from "three"
 import React from "react"; import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { CameraControls, Line, useCursor } from "@react-three/drei";
 import { Plane } from "three";
+import { create } from "zustand";
+import { combine } from "zustand/middleware";
 extend({ Line2 })
 
 
@@ -52,18 +54,18 @@ function intersectedFirst(ev: ThreeEvent<PointerEvent>) {
   return ev.eventObject.uuid == ev.intersections[0].object.uuid;
 }
 
+
 type ALineProps = {
   selected: (isSelected: boolean) => any;
   radius?: number;
   lineWidth?: number;
-  clippingPlanes?: THREE.Plane[];
 }
 
 
 type ALineType = "Meridian" | "Equator";
 
 function ALine(type: ALineType) {
-  return ({ radius = 1, lineWidth = 10, clippingPlanes = [], ...rest }: ALineProps) => {
+  return ({ radius = 1, lineWidth = 10, ...rest }: ALineProps) => {
     const curve = new THREE.EllipseCurve(
       0, 0,
       radius + 0.005, radius + 0.005,
@@ -75,6 +77,8 @@ function ALine(type: ALineType) {
     const points = curve.getPoints(150);
     const [selected, setSelected] = useState(false);
     const [hover, setHover] = useState(false);
+
+    const { isClipped, planes, planeDistance, planeRadius } = useClipping();
 
     const mouseup = (_: MouseEvent) => {
       setSelected(false);
@@ -90,9 +94,9 @@ function ALine(type: ALineType) {
       rest.selected(selected);
     }, [selected])
 
-    return (
+    return <>
       <Line
-        clippingPlanes={clippingPlanes}
+        clippingPlanes={planes}
         points={points}
         color={!hover ? "black" : "blue"}
         linewidth={lineWidth}
@@ -100,14 +104,43 @@ function ALine(type: ALineType) {
         onPointerOver={(ev) => {
           setHover(intersectedFirst(ev))
         }}
-        onPointerOut={(ev) => setHover(false)}
+        onPointerOut={(_) => setHover(false)}
         onPointerDown={(ev) => {
           if (intersectedFirst(ev)) {
             setSelected(true);
           }
         }}
       />
-    );
+
+      { isClipped && type == "Equator" &&
+        <>
+          <Line
+            points={[[planeDistance * 1.005, 0, -planeRadius * 1.005], [planeDistance * 1.005, 0, planeRadius * 1.005]]}
+            lineWidth={lineWidth}
+            color={!hover ? "black" : "blue"}
+            onPointerOver={(_) => {
+              setHover(true)
+            }}
+            onPointerOut={(_) => setHover(false)}
+            onPointerDown={(_) => {
+              setSelected(true);
+            }}
+          />
+          <Line
+            points={[[-planeDistance * 1.005, 0, -planeRadius * 1.005], [-planeDistance * 1.005, 0, planeRadius * 1.005]]}
+            lineWidth={lineWidth}
+            color={!hover ? "black" : "blue"}
+            onPointerOver={(_) => {
+              setHover(true)
+            }}
+            onPointerOut={(_) => setHover(false)}
+            onPointerDown={(_) => {
+              setSelected(true);
+            }}
+          />
+        </>
+      }
+    </>
   }
 }
 
@@ -127,36 +160,42 @@ const visibleWidthAtZDepth = (depth: any, camera: THREE.PerspectiveCamera) => {
   return height * camera.aspect;
 };
 
+const useClipping = create(
+  combine({
+    isClipped: false,
+    planes: [] as THREE.Plane[],
+    planeDistance: 0.0,
+    planeRadius: 0.0,
+
+  }, (set) => ({
+    clip: (planes: THREE.Plane[], dist: number, radius: number) => set({ isClipped: true, planes: planes, planeDistance: dist, planeRadius: radius }),
+    reset: () => set({ isClipped: false, planes: [], planeDistance: 0.0, planeRadius: 0.0 }),
+  })),
+)
+
 function Vis() {
-  const { gl, camera, size, viewport } = useThree();
+  const { camera, size, viewport } = useThree();
   const scale = Math.min(viewport.height / 2 - 0.5, viewport.width / 2 - 0.5);
   const pxScale = Math.min(size.height / 2, size.width / 2);
   const sphereRef = useRef<THREE.Sphere>(null!);
   const [hovered, setHovered] = useState<boolean>(false)
-  const [planes, setPlanes] = useState<THREE.Plane[]>([])
-  const [planeDistance, setPlaneDistance] = useState(0.0)
-  const [planeRadius, setPlaneRadius] = useState(0.0)
+
+  const { isClipped, planes, planeDistance, planeRadius, clip, reset } = useClipping();
   useCursor(hovered)
 
 
   useEffect(() => {
-    const distance = 0.55 * scale;
-    setPlaneDistance(distance);
+    const distance = 0.65 * scale;
     const xAxis = new THREE.Vector3(1, 0, 0);
     const nxAxis = new THREE.Vector3(-1, 0, 0);
 
     const left = new Plane(xAxis, distance);
     const right = new Plane(nxAxis, distance);
 
-    //gl.clippingPlanes = [left, right];
-
-    setPlanes([left, right]);
-
     // pythagorean theorem
     const rr = Math.sqrt(scale * scale - distance * distance);
-    console.log("plane radius", rr);
 
-    setPlaneRadius(rr * 1.001);
+    clip([left, right], distance, rr * 1.001)
   }, [viewport]);
 
 
@@ -222,7 +261,7 @@ function Vis() {
     <ambientLight intensity={Math.PI / 2} />
     <spotLight position={[10, 10, 15]} angle={0.15} penumbra={1} decay={0} intensity={Math.PI} />
 
-    <group position={[0, 0, 0]} scale={scale}>
+    <group position={[0, 0, 0]} >
       <mesh
         onPointerMove={(ev) => {
           const { point } = ev;
@@ -242,31 +281,26 @@ function Vis() {
         }}
         rotation={[Math.PI / 2, Math.PI / 2, 0]}
       >
-        <sphereGeometry ref={sphereRef} args={[1, 100, 64]} />
+        <sphereGeometry ref={sphereRef} args={[scale, 100, 64]} />
         <meshStandardMaterial clippingPlanes={planes} color="lightgrey">
         </meshStandardMaterial>
       </mesh>
 
-      <Equator lineWidth={pxScale / 80} selected={setSelectedEq} clippingPlanes={planes} />
-      <Meridian lineWidth={pxScale / 80} selected={setSelectedMer} />
+      <Equator radius={scale} lineWidth={pxScale / 80} selected={setSelectedEq} />
+      <Meridian radius={scale} lineWidth={pxScale / 80} selected={setSelectedMer} />
     </group>
 
-    <mesh position={[planeDistance, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-      <circleGeometry args={[planeRadius, 64]} />
-    </mesh>
-    <mesh position={[-planeDistance, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
-      <circleGeometry args={[planeRadius, 64]} />
-    </mesh>
-    <Line
-      points={[[planeDistance * 1.005, 0, -planeRadius * 1.005], [planeDistance * 1.005, 0, planeRadius * 1.005]]}
-      lineWidth={(pxScale / 80)}
-      color={"black"}
-    />
-    <Line
-      points={[[-planeDistance * 1.005, 0, -planeRadius * 1.005], [-planeDistance * 1.005, 0, planeRadius * 1.005]]}
-      lineWidth={(pxScale / 80)}
-      color={"black"}
-    />
+    {
+      isClipped &&
+      <>
+        <mesh position={[planeDistance, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <circleGeometry args={[planeRadius, 64]} />
+        </mesh>
+        <mesh position={[-planeDistance, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+          <circleGeometry args={[planeRadius, 64]} />
+        </mesh>
+      </>
+    }
 
     <CameraControls ref={cc} minDistance={4} maxDistance={10} minPolarAngle={minP} maxPolarAngle={maxP} minAzimuthAngle={minA} maxAzimuthAngle={maxA} />
   </>;
