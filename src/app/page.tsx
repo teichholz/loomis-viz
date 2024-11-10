@@ -7,6 +7,30 @@ import { CameraControls, Line, useCursor } from "@react-three/drei";
 import { Plane } from "three";
 import { create } from "zustand";
 import { combine } from "zustand/middleware";
+import {
+  Menubar,
+  MenubarContent,
+  MenubarItem,
+  MenubarMenu,
+  MenubarSeparator,
+  MenubarShortcut,
+  MenubarTrigger,
+} from "@/components/ui/menubar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DropdownMenuGroup } from "@radix-ui/react-dropdown-menu";
+import { CircleHelp, Download, Icon, Menu, Minus, Plus, Slice } from "lucide-react";
+import { Toggle } from "@/components/ui/toggle";
+import { Button } from "@/components/ui/button";
+
+
 extend({ Line2 })
 
 
@@ -112,7 +136,7 @@ function ALine(type: ALineType) {
         }}
       />
 
-      { isClipped && type == "Equator" &&
+      {isClipped && type == "Equator" &&
         <>
           <Line
             points={[[planeDistance * 1.005, 0, -planeRadius * 1.005], [planeDistance * 1.005, 0, planeRadius * 1.005]]}
@@ -306,14 +330,90 @@ function Vis() {
   </>;
 }
 
+const startZoom = 100
+const useUI = create(
+  combine({
+    zoom: startZoom,
+    limit: 50
+  }, (set) => ({
+    zoomOut: () => set(({ zoom, limit }) => ({ zoom: Math.abs(startZoom - zoom) < limit ? zoom - 10 : zoom })),
+    zoomIn: () => set(({ zoom, limit }) => ({ zoom: Math.abs(startZoom - zoom) < limit ? zoom + 10 : zoom })),
+    reset: () => set({ zoom: 1.0 }),
+  })),
+)
+
 export default function Home() {
+  const { zoom, zoomIn, zoomOut } = useUI()
+
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
+      {
+        //<Menubar>
+        //  <MenubarMenu>
+        //    <MenubarTrigger>File</MenubarTrigger>
+        //    <MenubarContent>
+        //      <MenubarItem>
+        //        Download <MenubarShortcut>⌘S</MenubarShortcut>
+        //      </MenubarItem>
+        //    </MenubarContent>
+        //  </MenubarMenu>
+        //  <MenubarMenu>
+        //    <MenubarTrigger>Options</MenubarTrigger>
+        //    <MenubarContent>
+        //      <MenubarItem>
+        //        Cranium Clipping <MenubarShortcut>⌘C</MenubarShortcut>
+        //      </MenubarItem>
+        //    </MenubarContent>
+        //  </MenubarMenu>
+        //</Menubar>
+        //
+      }
+      <div className="flex w-full">
+        <DropdownMenu>
+          <DropdownMenuTrigger>
+            <Menu />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuLabel>Menu</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem>
+                <Download /><span>Download</span>
+                <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem>
+                <Slice /> Cranium Clipping
+                <DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start h-4/5 w-4/5">
         <Canvas gl={{ localClippingEnabled: true }} camera={{ fov: 60 }} className="">
           <Vis />
         </Canvas>
       </main>
+
+      <div className="flex w-full justify-between">
+        <div>
+          <Button variant="outline" onClick={zoomOut}>
+            <Minus />
+          </Button>
+          <span className="p-2">{zoom}%</span>
+          <Button variant="outline" onClick={zoomIn}>
+            <Plus />
+          </Button>
+        </div>
+
+        <Toggle>
+          <CircleHelp />
+        </Toggle>
+      </div>
     </div >
   );
 }
