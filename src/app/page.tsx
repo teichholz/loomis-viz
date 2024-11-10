@@ -336,8 +336,8 @@ const useUI = create(
     zoom: startZoom,
     limit: 50
   }, (set) => ({
-    zoomOut: () => set(({ zoom, limit }) => ({ zoom: Math.abs(startZoom - zoom) < limit ? zoom - 10 : zoom })),
-    zoomIn: () => set(({ zoom, limit }) => ({ zoom: Math.abs(startZoom - zoom) < limit ? zoom + 10 : zoom })),
+    zoomOut: () => set(({ zoom, limit }) => ({ zoom: zoom > startZoom - limit ? zoom - 10 : zoom })),
+    zoomIn: () => set(({ zoom, limit }) => ({ zoom: zoom < startZoom + limit ? zoom + 10 : zoom })),
     reset: () => set({ zoom: 1.0 }),
   })),
 )
