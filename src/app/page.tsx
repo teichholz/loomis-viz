@@ -205,6 +205,8 @@ function Vis() {
   const [hovered, setHovered] = useState<boolean>(false)
 
   const { isClipped, planes, planeDistance, planeRadius, clip, reset } = useClipping();
+
+  const { zoom, setZoom, direction, setDirection } = useUI();
   useCursor(hovered)
 
 
@@ -266,6 +268,25 @@ function Vis() {
 
 
   const cc = useRef<CameraControls>();
+
+  const onZoom = () => {
+    const pos = camera.position;
+    const distance = pos.length();
+    const newZoom = mapRange(distance, 4, 10, 150, 90);
+
+    setZoom(newZoom);
+  };
+
+  useEffect(() => {
+    const mappedDistance = mapRange(zoom, 90, 150, 10, 4);
+
+    // we need to makes sure, that this hook only sets the state, if the increment / decrement of the zoom comes from the ui-zoom and not by zooming via the camera controls
+    // easy, since the ui-zoom always uses increments / decrements of 10 while the camera controls use very small increments / decrements
+    if (Math.abs(cc.current!.distance - mappedDistance) > 0.5) {
+      cc.current!.distance = mappedDistance;
+    }
+  }, [zoom]);
+
   const speed = .1;
   useKeybindings({
     cmd: "d",
@@ -326,24 +347,45 @@ function Vis() {
       </>
     }
 
-    <CameraControls ref={cc} minDistance={4} maxDistance={10} minPolarAngle={minP} maxPolarAngle={maxP} minAzimuthAngle={minA} maxAzimuthAngle={maxA} />
+    {
+      // TODO use min and max distance as zoom limits and simply map them to percent values to show the user 
+    }
+    <CameraControls onChange={onZoom} ref={cc} minDistance={4} maxDistance={10} minPolarAngle={minP} maxPolarAngle={maxP} minAzimuthAngle={minA} maxAzimuthAngle={maxA} />
   </>;
 }
 
-const startZoom = 100
-const useUI = create(
-  combine({
-    zoom: startZoom,
-    limit: 50
-  }, (set) => ({
-    zoomOut: () => set(({ zoom, limit }) => ({ zoom: zoom > startZoom - limit ? zoom - 10 : zoom })),
-    zoomIn: () => set(({ zoom, limit }) => ({ zoom: zoom < startZoom + limit ? zoom + 10 : zoom })),
-    reset: () => set({ zoom: 1.0 }),
-  })),
-)
+function mapRange(value: number, inMin: number, inMax: number, outMin: number = 0, outMax: number = 1): number {
+  return ((value - inMin) / (inMax - inMin)) * (outMax - outMin) + outMin;
+}
 
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+const startZoom = 140;
+const useUI = create(
+  combine(
+    {
+      zoom: startZoom,
+      lowerLimit: 90,
+      upperLimit: 150
+    },
+    (set) => ({
+      zoomOut: () => set(({ zoom, lowerLimit }) => ({
+        zoom: Math.max(startZoom - lowerLimit, zoom - (zoom % 10 || 10)),
+        direction: "ui"
+      })),
+      zoomIn: () => set(({ zoom, upperLimit }) => ({
+        zoom: Math.min(startZoom + upperLimit, zoom + (10 - zoom % 10)),
+        direction: "ui"
+      })),
+      setZoom: (zoom: number) => set({ zoom }),
+      reset: () => set({ zoom: 100 }),
+    })
+  )
+);
 export default function Home() {
-  const { zoom, zoomIn, zoomOut } = useUI()
+  const { zoom, upperLimit, lowerLimit, zoomIn, zoomOut } = useUI()
 
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
@@ -401,17 +443,17 @@ export default function Home() {
 
       <div className="flex w-full justify-between">
         <div>
-          <Button variant="outline" onClick={zoomOut}>
+          <Button variant="outline" onClick={zoomOut} disabled={zoom <= lowerLimit}>
             <Minus />
           </Button>
-          <span className="p-2">{zoom}%</span>
-          <Button variant="outline" onClick={zoomIn}>
+          <span className="p-2">{Math.round(zoom - 40)}%</span>
+          <Button variant="outline" onClick={zoomIn} disabled={zoom >= upperLimit}>
             <Plus />
           </Button>
         </div>
 
-        <Toggle>
-          <CircleHelp />
+        <Toggle aria-label="Toggle help" size="lg">
+          <CircleHelp className="w-6 h-6" />
         </Toggle>
       </div>
     </div >
