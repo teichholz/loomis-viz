@@ -1,6 +1,6 @@
 'use client'
 import { Canvas, extend, ThreeEvent, useThree } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
+import { MutableRefObject, Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import * as THREE from "three"
 import React from "react"; import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { CameraControls, Line, useCursor } from "@react-three/drei";
@@ -8,14 +8,17 @@ import { Plane } from "three";
 import { create } from "zustand";
 import { combine } from "zustand/middleware";
 import {
-  Menubar,
-  MenubarContent,
-  MenubarItem,
-  MenubarMenu,
-  MenubarSeparator,
-  MenubarShortcut,
-  MenubarTrigger,
-} from "@/components/ui/menubar"
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,42 +29,55 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { DropdownMenuGroup } from "@radix-ui/react-dropdown-menu";
-import { CircleHelp, Download, Icon, Menu, Minus, Plus, Slice } from "lucide-react";
-import { Toggle } from "@/components/ui/toggle";
+import { CircleHelp, Download, Menu, Minus, Plus, Slice } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 
 
 extend({ Line2 })
 
 
+type Key = string;
+type Modifier = "callOnce";
+
 interface KeyBinding {
-  cmd: string | string[],
-  callback: () => any,
+  cmd: Key | Key[];
+  callback: () => any;
+  mods?: Modifier | Modifier[];
 }
 
-export const useKeybindings = (...props: KeyBinding[]) => {
-  const currentlyPressedKeys = new Set();
+export const useKeybindings = (...bindings: KeyBinding[]) => {
+  const currentlyPressedKeys = new Set<string>();
+  const calledBindings = new Set<string>(); // Track commands that have been called with "callOnce"
 
-  const areAllKeyPressed = (keys: string | string[]) => {
-    for (const key of keys) {
-      if (!currentlyPressedKeys.has(key)) return false;
-    }
-    return true;
-  }
+  const areAllKeysPressed = (keys: Key[]) => keys.every(key => currentlyPressedKeys.has(key));
 
   const bindingsKeyDown = (e: KeyboardEvent) => {
     currentlyPressedKeys.add(e.key);
-    props.forEach((binding) => {
-      if (areAllKeyPressed(binding.cmd)) {
+    console.log("Keys pressed:", Array.from(currentlyPressedKeys));
+
+    bindings.forEach((binding) => {
+      const keys = Array.isArray(binding.cmd) ? binding.cmd : [binding.cmd];
+      const keyComboString = keys.join("+"); // Create a unique string for each key combination
+
+      if (areAllKeysPressed(keys)) {
+        const hasCallOnce = binding.mods?.includes("callOnce");
+        if (hasCallOnce && calledBindings.has(keyComboString)) return;
+
         binding.callback();
+
+        if (hasCallOnce) {
+          calledBindings.add(keyComboString);
+        }
       }
     });
-
   };
 
   const bindingsKeyUp = (e: KeyboardEvent) => {
     currentlyPressedKeys.delete(e.key);
-  }
+
+    calledBindings.clear();
+  };
 
   useEffect(() => {
     document.addEventListener("keydown", bindingsKeyDown);
@@ -72,7 +88,6 @@ export const useKeybindings = (...props: KeyBinding[]) => {
     };
   }, []);
 };
-
 /** Checks whether the first intersected object is the object that registered the event */
 function intersectedFirst(ev: ThreeEvent<PointerEvent>) {
   return ev.eventObject.uuid == ev.intersections[0].object.uuid;
@@ -193,20 +208,24 @@ const useClipping = create(
 
   }, (set) => ({
     clip: (planes: THREE.Plane[], dist: number, radius: number) => set({ isClipped: true, planes: planes, planeDistance: dist, planeRadius: radius }),
-    reset: () => set({ isClipped: false, planes: [], planeDistance: 0.0, planeRadius: 0.0 }),
+    resetClipping: () => set({ isClipped: false, planes: [], planeDistance: 0.0, planeRadius: 0.0 }),
   })),
 )
 
-function Vis() {
-  const { camera, size, viewport } = useThree();
+type VisProps = {
+  downloadFn: MutableRefObject<() => void>
+}
+
+function Vis({ downloadFn }: VisProps) {
+  const { gl, scene, camera, size, viewport } = useThree();
   const scale = Math.min(viewport.height / 2 - 0.5, viewport.width / 2 - 0.5);
   const pxScale = Math.min(size.height / 2, size.width / 2);
-  const sphereRef = useRef<THREE.Sphere>(null!);
-  const [hovered, setHovered] = useState<boolean>(false)
+  const sphereRef = useRef<THREE.Sphere>(null!); 
+  const [hovered, setHovered] = useState<boolean>(false);
 
-  const { isClipped, planes, planeDistance, planeRadius, clip, reset } = useClipping();
+  const { isClipped, planes, planeDistance, planeRadius, clip, resetClipping } = useClipping();
 
-  const { zoom, setZoom, direction, setDirection } = useUI();
+  const { zoom, setZoom, clipping } = useUI();
   useCursor(hovered)
 
 
@@ -221,8 +240,12 @@ function Vis() {
     // pythagorean theorem
     const rr = Math.sqrt(scale * scale - distance * distance);
 
-    clip([left, right], distance, rr * 1.001)
-  }, [viewport]);
+    if (clipping) {
+      clip([left, right], distance, rr * 1.001)
+    } else {
+      resetClipping();
+    }
+  }, [viewport, clipping]);
 
 
   // This is for debugging purposes
@@ -288,6 +311,7 @@ function Vis() {
   }, [zoom]);
 
   const speed = .1;
+
   useKeybindings({
     cmd: "d",
     callback: () => { cc.current?.rotateAzimuthTo(cc.current!.azimuthAngle - speed, true); }
@@ -301,6 +325,26 @@ function Vis() {
     cmd: "s",
     callback: () => { cc.current?.rotatePolarTo(cc.current!.polarAngle - speed, true); }
   });
+
+  // Assuming you already have a Three.js scene, camera, and renderer set up
+  const downloadSceneAsImage = () => {
+    gl.render(scene, camera);
+    const dataURL = gl.domElement.toDataURL('image/png');
+    console.log("data url", dataURL);
+
+
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = 'scene.png';
+    link.click();
+  };
+  useImperativeHandle(downloadFn, () => downloadSceneAsImage, []);
+
+  useKeybindings({
+    cmd: ["Meta", "Shift", "e"],
+    callback: downloadSceneAsImage,
+    mods: "callOnce"
+  })
 
   return <>
     <ambientLight intensity={Math.PI / 2} />
@@ -366,6 +410,8 @@ const startZoom = 140;
 const useUI = create(
   combine(
     {
+      clipping: true,
+
       zoom: startZoom,
       lowerLimit: 90,
       upperLimit: 150
@@ -380,36 +426,27 @@ const useUI = create(
         direction: "ui"
       })),
       setZoom: (zoom: number) => set({ zoom }),
-      reset: () => set({ zoom: 100 }),
+      toggleClipping: () => set(({ clipping }) => ({ clipping: !clipping })),
+      reset: () => set({ zoom: startZoom }),
     })
   )
 );
 export default function Home() {
-  const { zoom, upperLimit, lowerLimit, zoomIn, zoomOut } = useUI()
+  const { zoom, upperLimit, lowerLimit, zoomIn, zoomOut, reset, toggleClipping } = useUI()
+  const downloadFn = useRef<() => void>(null!);
+
+  useKeybindings({
+    cmd: ["Meta", "c"],
+    callback: toggleClipping,
+  });
+
+  const keybinds = [
+    { keys: "⌘+c", description: "Toggle cranium clipping" },
+    { keys: "⌘+\u{21E7}+e", description: "Export image" },
+  ];
 
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      {
-        //<Menubar>
-        //  <MenubarMenu>
-        //    <MenubarTrigger>File</MenubarTrigger>
-        //    <MenubarContent>
-        //      <MenubarItem>
-        //        Download <MenubarShortcut>⌘S</MenubarShortcut>
-        //      </MenubarItem>
-        //    </MenubarContent>
-        //  </MenubarMenu>
-        //  <MenubarMenu>
-        //    <MenubarTrigger>Options</MenubarTrigger>
-        //    <MenubarContent>
-        //      <MenubarItem>
-        //        Cranium Clipping <MenubarShortcut>⌘C</MenubarShortcut>
-        //      </MenubarItem>
-        //    </MenubarContent>
-        //  </MenubarMenu>
-        //</Menubar>
-        //
-      }
       <div className="flex w-full">
         <DropdownMenu>
           <DropdownMenuTrigger>
@@ -419,16 +456,16 @@ export default function Home() {
             <DropdownMenuLabel>Menu</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => downloadFn.current()}>
                 <Download /><span>Download</span>
-                <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
+                <DropdownMenuShortcut>⌘+{"\u{21E7}"}+e</DropdownMenuShortcut>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={toggleClipping}>
                 <Slice /> Cranium Clipping
-                <DropdownMenuShortcut>⌘C</DropdownMenuShortcut>
+                <DropdownMenuShortcut>⌘+c</DropdownMenuShortcut>
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
@@ -437,7 +474,7 @@ export default function Home() {
 
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start h-4/5 w-4/5">
         <Canvas gl={{ localClippingEnabled: true }} camera={{ fov: 60 }} className="">
-          <Vis />
+          <Vis downloadFn={downloadFn} />
         </Canvas>
       </main>
 
@@ -446,15 +483,39 @@ export default function Home() {
           <Button variant="outline" onClick={zoomOut} disabled={zoom <= lowerLimit}>
             <Minus />
           </Button>
-          <span className="p-2">{Math.round(zoom - 40)}%</span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger onClick={reset}>
+                <span className="p-2">{Math.round(zoom - 40)}%</span>
+              </TooltipTrigger>
+              <TooltipContent>
+                Reset Zoom
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           <Button variant="outline" onClick={zoomIn} disabled={zoom >= upperLimit}>
             <Plus />
           </Button>
         </div>
 
-        <Toggle aria-label="Toggle help" size="lg">
-          <CircleHelp className="w-6 h-6" />
-        </Toggle>
+
+        <Popover modal>
+          <PopoverTrigger><CircleHelp className="w-6 h-6" /></PopoverTrigger>
+          <PopoverContent side="top">
+            <div className="space-y-2">
+              {keybinds.map(({ keys, description }, index) => (
+                <React.Fragment key={index}>
+                  <div key={index} className="flex justify-between">
+                    <div>{description}</div>
+                    <div className="opacity-60 text-right">{keys}</div>
+                  </div>
+                  {index < keybinds.length - 1 && <Separator />}
+                </React.Fragment>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
     </div >
   );
