@@ -13,7 +13,7 @@ const OS = (() => {
   if (/android/i.test(userAgent)) return "Android";
   if (/iPad|iPhone|iPod/.test(userAgent)) return "iOS";
   return "Unknown";
-})();
+});
 
 const aliases: Record<Alias, Record<string, string>> = {
   mod: {
@@ -34,13 +34,13 @@ const beautifyMap: Record<string, Record<string, string>> = {
 const alias = (keybind: KeySeq): KeySeq =>
   keybind.map((key) =>
     key.toLowerCase() in aliases
-      ? aliases[key.toLowerCase() as Alias][OS] || aliases[key.toLowerCase() as Alias].default
+      ? aliases[key.toLowerCase() as Alias][OS()] || aliases[key.toLowerCase() as Alias].default
       : key
   );
 
 const beautify = (keybind: KeySeq): KeySeq =>
   keybind.map((key) =>
-    beautifyMap[OS]?.[key.toLowerCase()] || beautifyMap.default[key.toLowerCase()] || key
+    beautifyMap[OS()]?.[key.toLowerCase()] || beautifyMap.default[key.toLowerCase()] || key
   );
 
 export function hotkey(keys: KeySeq): string {
