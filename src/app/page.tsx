@@ -32,62 +32,13 @@ import { DropdownMenuGroup } from "@radix-ui/react-dropdown-menu";
 import { CircleHelp, Download, Menu, Minus, Plus, Slice } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Toggle } from "@/components/ui/toggle";
+import { hotkey, KeySeq, useKeybindings } from "@/lib/keys";
 
 
 extend({ Line2 })
 
 
-type Key = string;
-type Modifier = "callOnce";
-
-interface KeyBinding {
-  cmd: Key | Key[];
-  callback: () => any;
-  mods?: Modifier | Modifier[];
-}
-
-export const useKeybindings = (...bindings: KeyBinding[]) => {
-  const currentlyPressedKeys = new Set<string>();
-  const calledBindings = new Set<string>(); // Track commands that have been called with "callOnce"
-
-  const areAllKeysPressed = (keys: Key[]) => keys.every(key => currentlyPressedKeys.has(key));
-
-  const bindingsKeyDown = (e: KeyboardEvent) => {
-    currentlyPressedKeys.add(e.key);
-    console.log("Keys pressed:", Array.from(currentlyPressedKeys));
-
-    bindings.forEach((binding) => {
-      const keys = Array.isArray(binding.cmd) ? binding.cmd : [binding.cmd];
-      const keyComboString = keys.join("+"); // Create a unique string for each key combination
-
-      if (areAllKeysPressed(keys)) {
-        const hasCallOnce = binding.mods?.includes("callOnce");
-        if (hasCallOnce && calledBindings.has(keyComboString)) return;
-
-        binding.callback();
-
-        if (hasCallOnce) {
-          calledBindings.add(keyComboString);
-        }
-      }
-    });
-  };
-
-  const bindingsKeyUp = (e: KeyboardEvent) => {
-    currentlyPressedKeys.delete(e.key);
-
-    calledBindings.clear();
-  };
-
-  useEffect(() => {
-    document.addEventListener("keydown", bindingsKeyDown);
-    document.addEventListener("keyup", bindingsKeyUp);
-    return () => {
-      document.removeEventListener("keydown", bindingsKeyDown);
-      document.removeEventListener("keyup", bindingsKeyUp);
-    };
-  }, []);
-};
 /** Checks whether the first intersected object is the object that registered the event */
 function intersectedFirst(ev: ThreeEvent<PointerEvent>) {
   return ev.eventObject.uuid == ev.intersections[0].object.uuid;
@@ -220,7 +171,7 @@ function Vis({ downloadFn }: VisProps) {
   const { gl, scene, camera, size, viewport } = useThree();
   const scale = Math.min(viewport.height / 2 - 0.5, viewport.width / 2 - 0.5);
   const pxScale = Math.min(size.height / 2, size.width / 2);
-  const sphereRef = useRef<THREE.Sphere>(null!); 
+  const sphereRef = useRef<THREE.Sphere>(null!);
   const [hovered, setHovered] = useState<boolean>(false);
 
   const { isClipped, planes, planeDistance, planeRadius, clip, resetClipping } = useClipping();
@@ -313,20 +264,19 @@ function Vis({ downloadFn }: VisProps) {
   const speed = .1;
 
   useKeybindings({
-    cmd: "d",
+    cmd: ["d"],
     callback: () => { cc.current?.rotateAzimuthTo(cc.current!.azimuthAngle - speed, true); }
   }, {
-    cmd: "a",
+    cmd: ["a"],
     callback: () => { cc.current?.rotateAzimuthTo(cc.current!.azimuthAngle + speed, true); }
   }, {
-    cmd: "w",
+    cmd: ["w"],
     callback: () => { cc.current?.rotatePolarTo(cc.current!.polarAngle + speed, true); }
   }, {
-    cmd: "s",
+    cmd: ["s"],
     callback: () => { cc.current?.rotatePolarTo(cc.current!.polarAngle - speed, true); }
   });
 
-  // Assuming you already have a Three.js scene, camera, and renderer set up
   const downloadSceneAsImage = () => {
     gl.render(scene, camera);
     const dataURL = gl.domElement.toDataURL('image/png');
@@ -341,7 +291,7 @@ function Vis({ downloadFn }: VisProps) {
   useImperativeHandle(downloadFn, () => downloadSceneAsImage, []);
 
   useKeybindings({
-    cmd: ["Meta", "Shift", "e"],
+    cmd: ["Mod", "Shift", "e"],
     callback: downloadSceneAsImage,
     mods: "callOnce"
   })
@@ -431,18 +381,20 @@ const useUI = create(
     })
   )
 );
+
+
 export default function Home() {
   const { zoom, upperLimit, lowerLimit, zoomIn, zoomOut, reset, toggleClipping } = useUI()
   const downloadFn = useRef<() => void>(null!);
 
   useKeybindings({
-    cmd: ["Meta", "c"],
+    cmd: ["Mod", "c"],
     callback: toggleClipping,
   });
 
-  const keybinds = [
-    { keys: "⌘+c", description: "Toggle cranium clipping" },
-    { keys: "⌘+\u{21E7}+e", description: "Export image" },
+  const keybinds: {keys: KeySeq, description: string}[] = [
+    { keys: ["Mod", "c"], description: "Toggle cranium clipping" },
+    { keys: ["Mod", "Shift", "e"], description: "Export image" },
   ];
 
   return (
@@ -458,14 +410,14 @@ export default function Home() {
             <DropdownMenuGroup>
               <DropdownMenuItem onClick={() => downloadFn.current()}>
                 <Download /><span>Download</span>
-                <DropdownMenuShortcut>⌘+{"\u{21E7}"}+e</DropdownMenuShortcut>
+                <DropdownMenuShortcut>{hotkey(keybinds[0].keys)}</DropdownMenuShortcut>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem onClick={toggleClipping}>
                 <Slice /> Cranium Clipping
-                <DropdownMenuShortcut>⌘+c</DropdownMenuShortcut>
+                <DropdownMenuShortcut>{hotkey(keybinds[1].keys)}</DropdownMenuShortcut>
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
@@ -499,16 +451,17 @@ export default function Home() {
           </Button>
         </div>
 
-
-        <Popover modal>
-          <PopoverTrigger><CircleHelp className="w-6 h-6" /></PopoverTrigger>
+        <Popover>
+          <PopoverTrigger asChild>
+            <CircleHelp className="w-6 h-6" />
+          </PopoverTrigger>
           <PopoverContent side="top">
             <div className="space-y-2">
               {keybinds.map(({ keys, description }, index) => (
                 <React.Fragment key={index}>
                   <div key={index} className="flex justify-between">
                     <div>{description}</div>
-                    <div className="opacity-60 text-right">{keys}</div>
+                    <div className="opacity-60 text-right">{hotkey(keys)}</div>
                   </div>
                   {index < keybinds.length - 1 && <Separator />}
                 </React.Fragment>
