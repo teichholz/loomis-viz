@@ -1,4 +1,3 @@
-"use client";
 import { useEffect } from "react";
 
 export type Alias = "mod";
@@ -6,6 +5,7 @@ export type Key = string | Alias;
 export type KeySeq = Key[];
 
 const OS = (() => {
+  if (typeof navigator === "undefined") return "Unkown"; // make SSR happy
   const userAgent = navigator.userAgent;
   if (/Mac/.test(userAgent)) return "mac";
   if (/Win/.test(userAgent)) return "windows";
