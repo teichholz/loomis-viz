@@ -376,6 +376,8 @@ const useUI = create(
         direction: "ui"
       })),
       setZoom: (zoom: number) => set({ zoom }),
+      setLowerLimit: (lowerLimit: number) => set({ lowerLimit }),
+      setUpperLimit: (upperLimit: number) => set({ upperLimit }),
       toggleClipping: () => set(({ clipping }) => ({ clipping: !clipping })),
       reset: () => set({ zoom: startZoom }),
     })
