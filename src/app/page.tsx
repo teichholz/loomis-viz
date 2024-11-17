@@ -1,6 +1,6 @@
 'use client'
 import { Canvas, extend, ThreeEvent, useThree } from "@react-three/fiber";
-import { MutableRefObject, Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { MutableRefObject, useEffect, useImperativeHandle, useRef, useState } from "react";
 import * as THREE from "three"
 import React from "react"; import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { CameraControls, Line, useCursor } from "@react-three/drei";
@@ -46,95 +46,92 @@ function intersectedFirst(ev: ThreeEvent<PointerEvent>) {
 
 type ALineProps = {
   selected: (isSelected: boolean) => any;
+  type: "Meridian" | "Equator";
   radius?: number;
   lineWidth?: number;
 }
 
 
-type ALineType = "Meridian" | "Equator";
+const ALine = ({ radius = 1, lineWidth = 10, type, ...rest }: ALineProps) => {
+  const curve = new THREE.EllipseCurve(
+    0, 0,
+    radius + 0.005, radius + 0.005,
+    0, 2 * Math.PI,
+    false,
+    0
+  );
 
-function ALine(type: ALineType) {
-  return ({ radius = 1, lineWidth = 10, ...rest }: ALineProps) => {
-    const curve = new THREE.EllipseCurve(
-      0, 0,
-      radius + 0.005, radius + 0.005,
-      0, 2 * Math.PI,
-      false,
-      0
-    );
+  const points = curve.getPoints(150);
+  const [selected, setSelected] = useState(false);
+  const [hover, setHover] = useState(false);
 
-    const points = curve.getPoints(150);
-    const [selected, setSelected] = useState(false);
-    const [hover, setHover] = useState(false);
+  const { isClipped, planes, planeDistance, planeRadius } = useClipping();
 
-    const { isClipped, planes, planeDistance, planeRadius } = useClipping();
-
-    const mouseup = (_: MouseEvent) => {
-      setSelected(false);
+  const mouseup = (_: MouseEvent) => {
+    setSelected(false);
+  };
+  useEffect(() => {
+    document.addEventListener('mouseup', mouseup);
+    return () => {
+      document.removeEventListener('mouseup', mouseup);
     };
-    useEffect(() => {
-      document.addEventListener('mouseup', mouseup);
-      return () => {
-        document.removeEventListener('mouseup', mouseup);
-      };
-    }, [selected]);
+  }, [selected]);
 
-    useEffect(() => {
-      rest.selected(selected);
-    }, [selected])
+  useEffect(() => {
+    rest.selected(selected);
+  }, [selected])
 
-    return <>
-      <Line
-        clippingPlanes={planes}
-        points={points}
-        color={!hover ? "black" : "blue"}
-        linewidth={lineWidth}
-        rotation={type === "Equator" ? [Math.PI / 2, 0, 0] : [0, Math.PI / 2, 0]}
-        onPointerOver={(ev) => {
-          setHover(intersectedFirst(ev))
-        }}
-        onPointerOut={(_) => setHover(false)}
-        onPointerDown={(ev) => {
-          if (intersectedFirst(ev)) {
+  return <>
+    <Line
+      clippingPlanes={planes}
+      points={points}
+      color={!hover ? "black" : "blue"}
+      linewidth={lineWidth}
+      rotation={type === "Equator" ? [Math.PI / 2, 0, 0] : [0, Math.PI / 2, 0]}
+      onPointerOver={(ev) => {
+        setHover(intersectedFirst(ev))
+      }}
+      onPointerOut={(_) => setHover(false)}
+      onPointerDown={(ev) => {
+        if (intersectedFirst(ev)) {
+          setSelected(true);
+        }
+      }}
+    />
+
+    {isClipped && type == "Equator" &&
+      <>
+        <Line
+          points={[[planeDistance * 1.005, 0, -planeRadius * 1.005], [planeDistance * 1.005, 0, planeRadius * 1.005]]}
+          lineWidth={lineWidth}
+          color={!hover ? "black" : "blue"}
+          onPointerOver={(_) => {
+            setHover(true)
+          }}
+          onPointerOut={(_) => setHover(false)}
+          onPointerDown={(_) => {
             setSelected(true);
-          }
-        }}
-      />
-
-      {isClipped && type == "Equator" &&
-        <>
-          <Line
-            points={[[planeDistance * 1.005, 0, -planeRadius * 1.005], [planeDistance * 1.005, 0, planeRadius * 1.005]]}
-            lineWidth={lineWidth}
-            color={!hover ? "black" : "blue"}
-            onPointerOver={(ev) => {
-              setHover(true)
-            }}
-            onPointerOut={(_) => setHover(false)}
-            onPointerDown={(_) => {
-              setSelected(true);
-            }}
-          />
-          <Line
-            points={[[-planeDistance * 1.005, 0, -planeRadius * 1.005], [-planeDistance * 1.005, 0, planeRadius * 1.005]]}
-            lineWidth={lineWidth}
-            color={!hover ? "black" : "blue"}
-            onPointerOver={(_) => {
-              setHover(true)
-            }}
-            onPointerOut={(_) => setHover(false)}
-            onPointerDown={(_) => {
-              setSelected(true);
-            }}
-          />
-        </>
-      }
-    </>
-  }
+          }}
+        />
+        <Line
+          points={[[-planeDistance * 1.005, 0, -planeRadius * 1.005], [-planeDistance * 1.005, 0, planeRadius * 1.005]]}
+          lineWidth={lineWidth}
+          color={!hover ? "black" : "blue"}
+          onPointerOver={(_) => {
+            setHover(true)
+          }}
+          onPointerOut={(_) => setHover(false)}
+          onPointerDown={(_) => {
+            setSelected(true);
+          }}
+        />
+      </>
+    }
+  </>
 }
 
-const Meridian = ALine("Meridian");
-const Equator = ALine("Equator");
+const Meridian = (props: Omit<ALineProps, 'type'>) => ALine({ ...props, type: "Meridian" });
+const Equator = (props: Omit<ALineProps, 'type'>) => ALine({ ...props, type: "Equator" });
 
 const useClipping = create(
   combine({
@@ -157,7 +154,7 @@ function Vis({ downloadFn }: VisProps) {
   const { gl, scene, camera, size, viewport } = useThree();
   const scale = Math.min(viewport.height / 2 - 0.5, viewport.width / 2 - 0.5);
   const pxScale = Math.min(size.height / 2, size.width / 2);
-  const sphereRef = useRef<THREE.Sphere>(null!);
+  const sphereRef = useRef<THREE.SphereGeometry>(null!);
   const [hovered, setHovered] = useState<boolean>(false);
 
   const { isClipped, planes, planeDistance, planeRadius, clip, resetClipping } = useClipping();
@@ -213,7 +210,7 @@ function Vis({ downloadFn }: VisProps) {
   }, [selectedMer])
 
 
-  const cc = useRef<CameraControls>();
+  const cc = useRef<CameraControls>(null!);
 
   const onZoom = () => {
     const pos = camera.position;
@@ -362,7 +359,7 @@ export default function Home() {
     callback: toggleClipping,
   });
 
-  const keybinds: {keys: KeySeq, description: string}[] = [
+  const keybinds: { keys: KeySeq, description: string }[] = [
     { keys: ["Mod", "c"], description: "Toggle cranium clipping" },
     { keys: ["Mod", "Shift", "e"], description: "Export image" },
   ];
