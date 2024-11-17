@@ -1,96 +1,56 @@
 import { useEffect } from "react";
 
-export type Alias = "mod"
-export type Key = string | Alias
-export type KeySeq = Key[]
+export type Alias = "mod";
+export type Key = string | Alias;
+export type KeySeq = Key[];
 
-function getOS() {
-  let userAgent = navigator.userAgent
-
-  if (/Macintosh|MacIntel|MacPPC|Mac68K/.test(userAgent)) {
-    return "mac";
-  }
-  if (/Win32|Win64|Windows|WinCE/.test(userAgent)) {
-    return "windows";
-  }
-  if (/Linux/.test(userAgent)) {
-    return "linux";
-  }
-  if (/windows phone/i.test(userAgent)) {
-    return "Windows Phone";
-  }
-  if (/android/i.test(userAgent)) {
-    return "Android";
-  }
-  if (/iPad|iPhone|iPod/.test(userAgent)) {
-    return "iOS";
-  }
-
+const OS = (() => {
+  const userAgent = navigator.userAgent;
+  if (/Mac/.test(userAgent)) return "mac";
+  if (/Win/.test(userAgent)) return "windows";
+  if (/Linux/.test(userAgent)) return "linux";
+  if (/windows phone/i.test(userAgent)) return "Windows Phone";
+  if (/android/i.test(userAgent)) return "Android";
+  if (/iPad|iPhone|iPod/.test(userAgent)) return "iOS";
   return "Unknown";
-}
+})();
 
-const aliases = {
+const aliases: Record<Alias, Record<string, string>> = {
   mod: {
     mac: "Meta",
     linux: "Ctrl",
     windows: "Ctrl",
-    default: "Ctrl"
-  }
-}
+    default: "Ctrl",
+  },
+};
 
-function alias(keybind: KeySeq): KeySeq {
-  const os = getOS();
-  let aliased = keybind;
-  for (const [alias, binds] of Object.entries(aliases)) {
-    aliased = keybind.map(v => {
-      if (v.toLowerCase() == alias) {
-        return os in binds ? binds[os] : binds.default;
-      } else {
-        return v;
-      }
-    })
-  }
-  return aliased;
-}
+const beautifyMap: Record<string, Record<string, string>> = {
+  mac: { meta: "⌘", alt: "\u{2325}", option: "\u{2325}" },
+  linux: { meta: "Alt" },
+  windows: { meta: "Win" },
+  default: { shift: "\u{21E7}" },
+};
+
+const alias = (keybind: KeySeq): KeySeq =>
+  keybind.map((key) =>
+    key.toLowerCase() in aliases
+      ? aliases[key.toLowerCase() as Alias][OS] || aliases[key.toLowerCase() as Alias].default
+      : key
+  );
+
+const beautify = (keybind: KeySeq): KeySeq =>
+  keybind.map((key) =>
+    beautifyMap[OS]?.[key.toLowerCase()] || beautifyMap.default[key.toLowerCase()] || key
+  );
 
 export function hotkey(keys: KeySeq): string {
   return beautify(alias(keys)).join("+");
 }
 
-function beautify(keybind: KeySeq): KeySeq {
-  const os = getOS();
-
-  const beauty = {
-    mac: {
-      meta: "⌘",
-      alt: "\u{2325}",
-      option: "\u{2325}"
-    },
-    linux: {
-      meta: "Alt"
-    },
-    windows: {
-      meta: "Win"
-    },
-    default: {
-      shift: "\u{21E7}",
-    }
-  }
-
-  const osMap = os in beauty ? beauty[os] : {};
-  const map = Object.assign(osMap, beauty.default)
-
-  const beautfied = keybind.map(k => {
-    return k.toLowerCase() in map ? map[k.toLowerCase()] : k;
-  })
-
-  return beautfied;
-}
-
 export type Modifier = "callOnce";
 export interface KeyBind {
-  cmd: KeySeq
-  callback: () => any;
+  cmd: KeySeq;
+  callback: () => void;
   mods?: Modifier | Modifier[];
 }
 
@@ -98,32 +58,26 @@ export const useKeybindings = (...bindings: KeyBind[]) => {
   const currentlyPressedKeys = new Set<string>();
   const calledBindings = new Set<string>();
 
-  const areAllKeysPressed = (keys: KeySeq) => keys.every(key => currentlyPressedKeys.has(key));
+  const areAllKeysPressed = (keys: KeySeq) => keys.every((key) => currentlyPressedKeys.has(key));
 
   const bindingsKeyDown = (e: KeyboardEvent) => {
     currentlyPressedKeys.add(e.key);
-    console.log("Keys pressed:", Array.from(currentlyPressedKeys));
 
-    bindings.forEach((binding) => {
-      const resolved = alias(binding.cmd);
+    bindings.forEach(({ cmd, callback, mods }) => {
+      const resolved = alias(cmd);
       const keyComboString = resolved.join("+");
 
       if (areAllKeysPressed(resolved)) {
-        const hasCallOnce = binding.mods?.includes("callOnce");
-        if (hasCallOnce && calledBindings.has(keyComboString)) return;
+        if (mods?.includes("callOnce") && calledBindings.has(keyComboString)) return;
 
-        binding.callback();
-
-        if (hasCallOnce) {
-          calledBindings.add(keyComboString);
-        }
+        callback();
+        if (mods?.includes("callOnce")) calledBindings.add(keyComboString);
       }
     });
   };
 
   const bindingsKeyUp = (e: KeyboardEvent) => {
     currentlyPressedKeys.delete(e.key);
-
     calledBindings.clear();
   };
 
