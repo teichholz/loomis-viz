@@ -32,7 +32,6 @@ import { DropdownMenuGroup } from "@radix-ui/react-dropdown-menu";
 import { CircleHelp, Download, Menu, Minus, Plus, Slice } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Toggle } from "@/components/ui/toggle";
 import { hotkey, KeySeq, useKeybindings } from "@/lib/keys";
 
 
@@ -108,7 +107,7 @@ function ALine(type: ALineType) {
             points={[[planeDistance * 1.005, 0, -planeRadius * 1.005], [planeDistance * 1.005, 0, planeRadius * 1.005]]}
             lineWidth={lineWidth}
             color={!hover ? "black" : "blue"}
-            onPointerOver={(_) => {
+            onPointerOver={(ev) => {
               setHover(true)
             }}
             onPointerOut={(_) => setHover(false)}
@@ -136,19 +135,6 @@ function ALine(type: ALineType) {
 
 const Meridian = ALine("Meridian");
 const Equator = ALine("Equator");
-
-const visibleHeightAtZDepth = (depth: any, camera: THREE.PerspectiveCamera) => {
-  // vertical fov in radians
-  const vFOV = camera.fov * Math.PI / 180;
-
-  // Math.abs to ensure the result is always positive
-  return 2 * Math.tan(vFOV / 2) * Math.abs(depth);
-};
-
-const visibleWidthAtZDepth = (depth: any, camera: THREE.PerspectiveCamera) => {
-  const height = visibleHeightAtZDepth(depth, camera);
-  return height * camera.aspect;
-};
 
 const useClipping = create(
   combine({
@@ -197,20 +183,6 @@ function Vis({ downloadFn }: VisProps) {
       resetClipping();
     }
   }, [viewport, clipping]);
-
-
-  // This is for debugging purposes
-  useEffect(() => {
-    console.log("camera", camera);
-    console.log("viewport", viewport);
-    console.log("size", size);
-
-    // I did this for debugging purposes. This information already is inside the viewport object.
-    console.log("c height", visibleHeightAtZDepth(5, camera as THREE.PerspectiveCamera));
-    console.log("c width", visibleWidthAtZDepth(5, camera as THREE.PerspectiveCamera));
-
-  }, []);
-
 
   const [selectedEq, setSelectedEq] = useState<boolean>(false);
   const [selectedMer, setSelectedMer] = useState<boolean>(false);
@@ -285,7 +257,7 @@ function Vis({ downloadFn }: VisProps) {
 
     const link = document.createElement('a');
     link.href = dataURL;
-    link.download = 'scene.png';
+    link.download = 'loomis.png';
     link.click();
   };
   useImperativeHandle(downloadFn, () => downloadSceneAsImage, []);
@@ -315,7 +287,7 @@ function Vis({ downloadFn }: VisProps) {
 
           setHovered(inside);
         }}
-        onPointerOut={(ev) => {
+        onPointerOut={(_) => {
           setHovered(false);
         }}
         rotation={[Math.PI / 2, Math.PI / 2, 0]}
@@ -350,10 +322,6 @@ function Vis({ downloadFn }: VisProps) {
 
 function mapRange(value: number, inMin: number, inMax: number, outMin: number = 0, outMax: number = 1): number {
   return ((value - inMin) / (inMax - inMin)) * (outMax - outMin) + outMin;
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
 }
 
 const startZoom = 140;
