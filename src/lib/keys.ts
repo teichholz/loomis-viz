@@ -5,7 +5,7 @@ export type Key = string | Alias;
 export type KeySeq = Key[];
 
 const OS = (() => {
-  if (typeof navigator === "undefined") return "Unkown"; // make SSR happy
+  if (typeof navigator === "undefined") return "Unknown"; // make SSR happy
   const userAgent = navigator.userAgent;
   if (/Mac/.test(userAgent)) return "mac";
   if (/Win/.test(userAgent)) return "windows";
