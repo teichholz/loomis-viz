@@ -360,8 +360,8 @@ export default function Home() {
   });
 
   const keybinds: { keys: KeySeq, description: string }[] = [
-    { keys: ["Mod", "c"], description: "Toggle cranium clipping" },
     { keys: ["Mod", "Shift", "e"], description: "Export image" },
+    { keys: ["Mod", "c"], description: "Toggle cranium clipping" },
   ];
 
   return (
